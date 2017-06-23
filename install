@@ -4,18 +4,8 @@
 # Arquivo de instalação do riso e do risos
 # --------------------------------------------------------------------------
 
-dep_cli="avahi-utils rtorrent screen ntfsprogs ssh"
-dep_ser="avahi-utils avahi-daemon bittorrent rtorrent screen ntfsprogs grub2 ssh coreutils mkisofs genisoimage findutils bash passwd sed squashfs-tools casper rsync mount eject libdebian-installer4 os-prober ubiquity user-setup discover1 discover laptop-detect syslinux xterm util-linux xresprobe cdrecord"
-
-# modificaçao -- dessabila o UUID no ubuntu
-DisableUUID(){ 
-b=`cat /boot/grub/grub.cfg | grep =UUID=`
-uuidUbuntu=`(cut -d ' ' -f3 | cut -d '=' -f2-3)<<<${b}`
-partLinux=`os-prober | grep linux | cut -d ':' -f1` 
-
-sed "s|${uuidUbuntu}|${partLinux}|g" -i /boot/grub/grub.cfg
-
-}
+dep_cli="avahi-utils rtorrent screen ntfs-3g ssh"
+dep_ser="avahi-utils avahi-daemon bittorrent rtorrent screen ntfs-3g grub2 ssh coreutils mkisofs genisoimage findutils bash passwd sed squashfs-tools casper rsync mount eject libdebian-installer4 os-prober ubiquity user-setup discover-data discover laptop-detect syslinux xterm util-linux xresprobe cdrecord"
 
 menu() {
     apt-get install -y dialog
@@ -28,10 +18,13 @@ menu() {
 	RISO '' ON )
 
 	# De acordo com a opção escolhida, executa funcoes
-	case $opcao in
-		'"RISOS"') instala_risos;;
-		'"RISO"') instala_riso;;
-		'"RISOS" "RISO"') instala_riso; instala_risos;;
+	case "$opcao" in
+		'RISOS')
+                    instala_risos;;
+		'RISO')
+                    instala_riso;;
+		'RISOS RISO')
+                    instala_riso; instala_risos;;
 	esac
 }
 
@@ -52,20 +45,16 @@ instala_riso() {
     
     echo "Movendo script..."
     cp ./src/riso /usr/riso/riso
-    cp ./src/quitRTorrent.sh /usr/riso/quitRTorrent.sh
-    chmod +x /usr/riso/quitRTorrent.sh
     chmod +x /usr/riso/riso
     cp ./conf/riso.conf /usr/riso/riso.conf
-    cp ./conf/.rtorrent.rc /root    
-
+    
     echo "Sistema instalado com sucesso."
     echo "Tente digitar 'riso' para iniciar."
 }
 
 instala_risos() {
     echo "Instalando Servidor (RISOS)..."
-    servidor=`ip route | grep src | cut -d ' ' -f12`  
-        
+    
     echo "Liberando login como root..."
     echo -n "root:" > /etc/shadow.tmp
     pass=`cat /etc/shadow | grep \`who | awk 'NR==1{print $1}'\` | cut -d':' -f2`
@@ -97,28 +86,30 @@ instala_risos() {
     echo "Criando variáveis de configuração..."
     
     #Pega partições
-    partrec=`df -T | awk 'NR==2{print $1}'`
+    partrec=`cat /etc/mtab | awk 'NR==1{print $1}'`
     partwindows=`os-prober | grep Windows | cut -d':' -f1`
     partlinux=`os-prober | grep linux | cut -d':' -f1`
     partswap=`blkid | grep swap | grep -v ram | cut -d':' -f1`
     
     #Pega sistema de arquivo das partiçoes.
-    sa_partrec=`df -T | awk 'NR==2{print $2}'`
-    sa_partlinux=`blkid ${partlinux} | cut -d'"' -f4`
-    sa_partwindows=`blkid ${partwindows} | cut -d'"' -f4`
-    
+    sa_partrec=`blkid ${partrec} | awk '{print $NF}' | sed 's/"//g' | cut -d '=' -f2`
+    sa_partlinux=`blkid ${partlinux} | awk '{print $NF}' | sed 's/"//g' | cut -d '=' -f2`
+    sa_partwindows=`blkid ${partwindows} | awk '{print $NF}' | sed 's/"//g' | cut -d '=' -f2`     
     #Prepara grub2
-    #sed s/'GRUB_DEFAULT=0'/'GRUB_DEFAULT=1'/g -i /etc/default/grub
+    sed s/'GRUB_DEFAULT=0'/'GRUB_DEFAULT=1'/g -i /etc/default/grub
     sed s/'GRUB_DISTRIBUTOR=*'/'#GRUB_DISTRIBUTOR='/g -i /etc/default/grub
     echo 'GRUB_DISTRIBUTOR=Recuperacao' >> /etc/default/grub
-    sed s/'#GRUB_DISABLE_LINUX_UUID=true'/'GRUB_DISABLE_LINUX_UUID=true'/g -i /etc/default/grub
+    sed s/'#GRUB_DISABLE_LINUX_UUID=true'/'GRUB_DISABLE_LINUX_UUID="true"'/g -i /etc/default/grub
     sed s/'#GRUB_DISABLE_LINUX_RECOVERY="true"'/'GRUB_DISABLE_LINUX_RECOVERY="true"'/g -i /etc/default/grub
     rm -f /etc/grub.d/20_memtest86+
     mv /etc/grub.d/10_linux /etc/grub.d/50_linux
-    update-grub
-  
-    DisableUUID #modificacao
-  
+    
+    update-grub2
+    grub-install /dev/sda
+
+    #Prepara avahi
+    sed s/'use-ipv6=yes'/'use-ipv6=no'/g -i /etc/avahi/avahi-daemon.conf
+    
     #Cria riso.service
     echo "Criando arquivo de configuração..."
     echo '<?xml version="1.0" standalone="no"?><!--*-nxml-*-->' > /etc/avahi/services/riso.service
@@ -133,18 +124,15 @@ instala_risos() {
     echo '-->' >> /etc/avahi/services/riso.service
     echo '' >> /etc/avahi/services/riso.service
     echo '<service-group>' >> /etc/avahi/services/riso.service
-    echo '  <name>Servidor RISO DECOM</name>' >> /etc/avahi/services/riso.service
+    echo '  <name>Servidor RISO</name>' >> /etc/avahi/services/riso.service
     echo '' >> /etc/avahi/services/riso.service
     echo '  <service>' >> /etc/avahi/services/riso.service
     echo '    <!--Nome do serviço-->' >> /etc/avahi/services/riso.service
-    echo "    <type>_DECOM_RISO._tcp</type>" >> /etc/avahi/services/riso.service
+    echo "    <type>_RISO._tcp</type>" >> /etc/avahi/services/riso.service
     echo '' >> /etc/avahi/services/riso.service
     echo '    <!--Campo não é usado-->' >> /etc/avahi/services/riso.service
     echo '    <port>1234</port>' >> /etc/avahi/services/riso.service
     echo '' >> /etc/avahi/services/riso.service
-    echo '    <!--Ip do servidor-->' >> /etc/avahi/services/riso.service # modifiçaco para guarda o ip do servidor
-    echo "    <txt-record>Servidor=$servidor</txt-record>" >> /etc/avahi/services/riso.service #
-    echo '' >> /etc/avahi/services/riso.service #
     echo '    <!--Variáveis com sistema de arquivo das partições-->' >> /etc/avahi/services/riso.service
     echo "    <txt-record>sa_partrec=${sa_partrec}</txt-record>" >> /etc/avahi/services/riso.service
     echo "    <txt-record>sa_partlinux=${sa_partlinux}</txt-record>" >> /etc/avahi/services/riso.service
@@ -162,7 +150,12 @@ instala_risos() {
     echo '' >> /etc/avahi/services/riso.service
     echo '  </service>' >> /etc/avahi/services/riso.service
     echo '</service-group>' >> /etc/avahi/services/riso.service
-    
+    /etc/init.d/avahi-daemon restart
+
+    # Prepara configuracoes para o rtorrent
+    echo "system.method.set_key=event.download.finished,quit,\"execute = pkill, -9, rtorrent\"" > /root/.rtorrent.rc
+    echo "max_memory_usage=3500M" >> /root/.rtorrent.rc
+    echo "set_max_file_size=500G" >> /root/.rtorrent.rc
        
     # preinst script for remastersys
     if [ -d /remastersys ]; then

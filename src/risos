@@ -9,8 +9,8 @@ img_rec=$dir_img/rec.tar	#arquivo da imagem da recuperacao (ubuntu_server)
 tor_win=$img_win.torrent	#torrent da imagem do windows
 tor_lin=$img_lin.torrent	#torrent da imagem do linux
 riso_service=/etc/avahi/services/riso.service	#servico do servidor de imagem
-tab_part=$dir_img/tab_part	#cfdisck -d ; salva tabela de partição no servidor para poder instalar a recuperaçao no cliente
-riso_part=$dir_riso/riso.part	#salva partiçães dos respectivos sistemas	
+tab_part=$dir_img/tab_part	
+riso_part=$dir_riso/riso.part	
 arq_log=$dir_riso/riso.log	#Arquivo de log
 
 #Função de Log
@@ -22,8 +22,8 @@ log(){
 #Carrega variaveis do arquivo riso.service para variáveis do sistema.
 carrega_variaveis() {
 
-    avahi_saida=`avahi-browse -rtp _DECOM_RISO._tcp | grep '='`
-    servidor=`ip route | grep src | cut -d ' ' -f12` #modificacao ip do servidor.
+    avahi_saida=`avahi-browse -rtp _RISO._tcp | grep '='`
+    servidor=`cut -d ';' -f8 <<< ${avahi_saida}` #ip do servidor.
     if [ -z $servidor ]; then
         dialog \
         --title 'Atencao' \
@@ -59,9 +59,10 @@ inicia_servidor() {
 
 	if [ -e ${img_win} -a -e ${img_lin} ]; then
 	    log "Tracker iniciado para Windows e Linux."
-		bttrack --port 6969 --dfile dstate | grep laialadaiasabadanaavemaria &
+		bttrack --port 6969 --dfile dstate > /dev/null 2>&1 &
 		cd ${dir_img}	
 		rtorrent ${tor_lin} ${tor_win}
+                pkill -9 bttrack
 		log "Tracker finalizado para Windows e Linux."
 	else
 		dialog \
@@ -80,9 +81,10 @@ inicia_servidor_windows() {
 
 	if [ -e ${img_win} ]; then
     	log "Tracker iniciado para Windows."
-		bttrack --port 6969 --dfile dstate | grep laialadaiasabadanaavemaria &
+		bttrack --port 6969 --dfile dstate > /dev/null 2>&1 &
 		cd ${dir_img}
 		rtorrent ${tor_win}
+                pkill -9 bttrack
 		log "Tracker finalizado para Windows."
 	else
 		dialog \
@@ -101,9 +103,10 @@ inicia_servidor_linux() {
 
 	if [ -e ${img_lin} ]; then
 	    log "Tracker iniciado para Linux."
-		bttrack --port 6969 --dfile dstate | grep laialadaiasabadanaavemaria &
+		bttrack --port 6969 --dfile dstate > /dev/null 2>&1 &
 		cd ${dir_img}		
 		rtorrent ${tor_lin}
+                pkill -9 bttrack
 		log "Tracker finalizado para Linux."
 	else
 		dialog \
@@ -132,10 +135,10 @@ cria_linux() {
 	tar -cvf ${img_lin} *
 	
 	#Atualiza Sistema de arquivo da partição no riso.service
-	sa_partlinux=`blkid ${partlinux} | cut -d'"' -f4`
+        sa_partlinux=`blkid ${partlinux} | awk '{print $NF}' | sed 's/"//g' | cut -d '=' -f2`
 	sed "s/sa_partlinux=[^<]*/sa_partlinux=${sa_partlinux}/" < ${riso_service} > ${riso_service}.tmp
 	mv ${riso_service}.tmp ${riso_service}
-	
+	/etc/init.d/avahi-daemon restart
 	umount /mnt 2> /dev/null
 	log "Imagem do Linux criada."
 }
@@ -148,16 +151,10 @@ cria_torrent_linux() {
 	    #Cria o torrent
 	    btmakemetafile.bittorrent ${img_lin} http://${servidor}:6969/announce 2> /dev/null
 	
-	    #Atualiza o IP do servidor no riso.service
-        servidor_antigo=`cat ${riso_service} | grep Servidor= | cut -d '<' -f2 | cut -d '>' -f2`    # modificacao pega ip antigo do arquivo riso.sevice
-        sed "s/$servidor_antigo*/Servidor=${servidor}/" < ${riso_service} > ${riso_service}.tmp #
-        mv ${riso_service}.tmp ${riso_service}
-        
-        #Escreve o tamanho da imagem no riso.service
-	    tam=`du ${img_lin} | cut -f1` 
+	    #Escreve o tamanho da imagem no riso.service
+	    tam=`du ${img_lin} | cut -f1`
 	    sed "s/tamlinux=[0-9]*/tamlinux=${tam}/" < ${riso_service} > ${riso_service}.tmp
 	    mv ${riso_service}.tmp ${riso_service}
-
 	    log "Arquivo torrent do Linux criado."
 	else
         dialog \
@@ -198,7 +195,7 @@ pode estar incorreta.\n' \
         return 3
     fi
     #Atualiza Sistema de arquivo da partição no riso.service
-	sa_partwindows=`blkid ${partwindows} | cut -d'"' -f4`
+        sa_partwindows=`blkid ${partwindows} | awk '{print $NF}' | sed 's/"//g' | cut -d '=' -f2`     
 	sed "s/sa_partwindows=[^<]*/sa_partwindows=${sa_partwindows}/" < ${riso_service} > ${riso_service}.tmp
 	mv ${riso_service}.tmp ${riso_service}
 	log "Imagem do Windows criada."
@@ -212,16 +209,10 @@ cria_torrent_windows() {
 	    log "Criando arquivo torrent do windows."
         btmakemetafile.bittorrent ${img_win} http://${servidor}:6969/announce 2> /dev/null
 
-	    #Atualiza o IP do servidor no riso.service
-        servidor_antigo=`cat ${riso_service} | grep Servidor= | cut -d '<' -f2 | cut -d '>' -f2`    # modificacao pega ip antigo do arquivo riso.sevice
-        sed "s/$servidor_antigo*/Servidor=${servidor}/" < ${riso_service} > ${riso_service}.tmp #
-        mv ${riso_service}.tmp ${riso_service}
-        
         #Escreve o tamanho da imagem no riso.service
 	    tam=`du ${img_win} | cut -f1`
         sed "s/tamwindows=[0-9]*/tamwindows=${tam}/" < ${riso_service} > ${riso_service}.tmp
 	    mv ${riso_service}.tmp ${riso_service}
-
 	    log "Arquivo torrent do windows criado."
     else
         dialog \
@@ -252,7 +243,7 @@ cria_rec() {
 	tar --exclude=home/remastersys --exclude=proc/* --exclude=risos --exclude=riso.service -cvf ${img_rec} *
 	
 	#Atualiza Sistema de arquivo da partição no riso.service
-    sa_partrec=`df -T | awk 'NR==2{print $2}'`
+    sa_partrec=`blkid ${partrec} | awk '{print $NF}' | sed 's/"//g' | cut -d '=' -f2`
     sed "s/sa_partrec=[^<]*/sa_partrec=${sa_partrec}/" < ${riso_service} > ${riso_service}.tmp
     mv ${riso_service}.tmp ${riso_service}
 	log "Imagem de recuperação criada."
@@ -267,7 +258,7 @@ atualiza() {
 	ping -q -c 1 200.131.37.236 > /dev/null 2>&1
 	if [ "$?" -eq "0" ]; then
 		log "Iniciando download do script novo."
-		(wget 200.131.37.236/riso/risos0.5 -O /usr/riso/risos && log "RISO atualizado com sucesso.") || log "ERRO: Não foi possível baixar o novo script."
+		(wget 200.131.37.236/riso/risos -O /usr/riso/risos && log "RISO atualizado com sucesso.") || log "ERRO: Não foi possível baixar o novo script."
 		
 		#Menssagem de atualizado com sucesso.
 		dialog \
@@ -306,7 +297,6 @@ creditos() {
 		         Marcio J. Menezes Jr.           \n
 		    Gabriel Machado de Castro Fonseca    \n
 		      André Luiz Silveira Herculano      \n
-		       Gilmar Pereira de Alcantara       \n
 		                                         \n
 		           www.dgo.cefetmg.br            \n
 		                                         \n'\
@@ -425,9 +415,9 @@ livecd() {
 	--ok-label 'OK' \
 	--title 'Atenção' \
     --msgbox 'Arquivo de imagem criado com sucesso em:\n
-/home/remastersys/riso0.5.iso.\n\n
+/home/remastersys/riso.iso.\n\n
 Para garava-lo em um CD/DVD tente:\n
-cdrecord -v -fs=16M speed=32 dev=1,0,0 -data /home/remastersys/riso0.5.iso\n\n
+cdrecord -v -fs=16M speed=32 dev=1,0,0 -data /home/remastersys/riso.iso\n\n
 Identifique seu dev com: cdrecore -scanbus' \
     0 0
     log "Live-cd do riso criado."
@@ -965,10 +955,10 @@ menu_inicia_servidor() {
 	Linux '' ON )
 
 	# De acordo com a opção escolhida, executa funcoes
-	case $opcao in
-		'"Windows"') inicia_servidor_windows;;
-		'"Linux"') inicia_servidor_linux;;
-		'"Windows" "Linux"') inicia_servidor;;
+	case "$opcao" in
+		'Windows') inicia_servidor_windows;;
+		'Linux') inicia_servidor_linux;;
+		'Windows Linux') inicia_servidor;;
 	esac
 	
 }
@@ -985,14 +975,14 @@ menu_criar_imagens() {
 	Recuperacao '' off )
 
 	# De acordo com a opção escolhida, executa funcoes
-	case $opcao in
-		'"Windows"') cria_windows && cria_torrent_windows && windows_criado;;
-		'"Linux"') cria_linux && cria_torrent_linux && linux_criado;;
-		'"Recuperacao"') cria_rec && rec_criado;;
-		'"Windows" "Linux"') cria_windows && cria_torrent_windows && cria_linux && cria_torrent_linux && imagens_criadas;;
-		'"Windows" "Recuperacao"') cria_rec && cria_windows && cria_torrent_windows && imagens_criadas;;
-		'"Linux" "Recuperacao"') cria_rec && cria_linux && cria_torrent_linux && imagens_criadas;;
-		'"Windows" "Linux" "Recuperacao"') cria_rec && cria_windows && cria_torrent_windows && cria_linux && cria_torrent_linux && imagens_criadas;;
+	case "$opcao" in
+		'Windows') cria_windows && cria_torrent_windows && windows_criado;;
+		'Linux') cria_linux && cria_torrent_linux && linux_criado;;
+		'Recuperacao') cria_rec && rec_criado;;
+		'Windows Linux') cria_windows && cria_torrent_windows && cria_linux && cria_torrent_linux && imagens_criadas;;
+		'Windows Recuperacao') cria_rec && cria_windows && cria_torrent_windows && imagens_criadas;;
+		'Linux Recuperacao') cria_rec && cria_linux && cria_torrent_linux && imagens_criadas;;
+		'Windows Linux Recuperacao') cria_rec && cria_windows && cria_torrent_windows && cria_linux && cria_torrent_linux && imagens_criadas;;
 	esac
 	
 }
@@ -1008,10 +998,10 @@ menu_criar_torrents() {
 	Linux '' ON  )
 
     # De acordo com a opção escolhida, executa funcoes
-	case $opcao in
-		'"Windows"') cria_torrent_windows && torrent_windows_criado;;
-		'"Linux"') cria_torrent_linux && torrent_linux_criado;;
-		'"Windows" "Linux"') cria_torrent_windows && cria_torrent_linux && torrents_criados;;
+	case "$opcao" in
+		'Windows') cria_torrent_windows && torrent_windows_criado;;
+		'Linux') cria_torrent_linux && torrent_linux_criado;;
+		'Windows Linux') cria_torrent_windows && cria_torrent_linux && torrents_criados;;
 	esac
 	
 }
@@ -1024,7 +1014,7 @@ menu() {
 		dialog --stdout                         \
 		--ok-label 'Confirmar'                  \
 		--cancel-label 'Sair'                   \
-		--title 'RISOS - 0.8'                   \
+		--title 'RISOS'                   \
 		--menu 'Escolha o que voce quer fazer:' \
 			0 0 0                               \
 			1 'Iniciar servidor'                \
@@ -1037,7 +1027,7 @@ menu() {
 	
 		# ESC, sai do programa...
 		[ $? -ne 0 ] && break
-	
+
 		# De acordo com a opção escolhida, executa funçao
 		case $opcao in
 			1) menu_inicia_servidor;;

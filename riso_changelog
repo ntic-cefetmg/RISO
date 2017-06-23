@@ -1,0 +1,69 @@
+Arquivo INSTALL:
+
+configuracao adequada do disable-uuid e do grub-install no grub
+
+substituicao de pacotes obsoletos nas linhas 7 e 8.vim 
+ntfsprogs -> ntfs-3g
+discover1 -> discover-data
+
+adequacao da nova sintaxe do bash no ubuntu 14.04 lts no case da linha 21 na funçao menu
+
+adequacao da insercao de particoes no arquivo riso.service (geracao do arquivo riso.service no avahi)
+
+insercao de novas linhas no arquivo install - 
+
+geracao de arquivo .rtorrent.rc no home do usuario root, com os paremtros para finalizar o rtorrent apos o fim do download,
+permitir arquivos de grande tamanho e setar uso maximo de ram para 3.5GB
+
+Arquivo RISO:
+
+alteracao linha 661 - verifica se existe servidor ativo na rede
+
+adequacao da nova sintaxe do bash no ubuntu 14.04 lts nas estruturas case
+
+retirada da barra de progresso e do killall rtorrent, com execucao simples do rtorrent que finaliza pelo envento setado em rtorrent.rc do usuario root
+
+adequacao ao grub2, seguido do grub install para as instalacoes, no caso do ubuntu, execucao do update-grub2 após instalacao do linux para atualizar as novas uuids dos hds
+
+Arquivo RISOS:
+
+adequacao da nova sintaxe do bash no ubuntu 14.04 lts nas estruturas case
+
+retirada do | grep laiasadaia e a redirecao para o lugar certo
+
+correção do tipo de sistema de arquivos para todas particoes (mesmo feito no install)
+
+adequacao ao avahi na criacao de imagem de recuperacao
+
+Features:
+
+Atualmente compativel com estrutura do windows vista, 7 e linux
+algo que buscamos é compatibilizar o RISOS com o windows 10
+
+ISSUES:
+
+por limitacoes do rtorrent, quando ele sai por interrupcao do usuario, nao conseguimos saber se o download finalizou ou não. Por isso, uma feature adequada para o RISOS é saber quando o usuario interrompeu o download propositalmente para interromper a execução do script naquele ponto, pois senão, ele exceuta a parte instala_<win,lin> e dá pau, pois a imagem não foi baixada completamente.
+
+Possiveis abordagens para essa resolucao:
+
+1. pegar sinal ctrl+q do rtorrent
+2. setar um flag como variavel de ambiente, informando que o download esta em execucao e setar esse flag para concluido no momento do evento download.finished no rtorrent.
+3. recompilar a librtorrent e desabilitar o rtorrent para alocação completa do tamanho do arquivo
+
+http://relict.blogspot.com.br/2013/06/rtorrent-new-file-size.html
+
+ (dificulta atualizacoes de SO)
+
+
+Mais issues resolvidas
+
+Erro 0Xc00000e
+Erro do bootloader do windows, ocasionado por um arquivo BCD (arquivo de boot do windows) especifico gerado para o disco rigido do risos, mas nao generico o suficiente para as estacoes a serem clonadas. Solucao adotada - procurar um arquivo generico na internet - que achei no seguinte site: http://www.deploystudio.com/Forums/viewtopic.php?id=1938 e a solução descrita por eles foi a seguinte: um arquivo bcd generico pode ser gerado a partir do cd de instalação do windows (vista/7/8/10) e então copiado a um pendrive (extração do arquivo) para aí ser colocado c:\Boot\BCD na nova instalação do windows.
+
+Isso consertou meu problema
+
+Vou averiguar trocando o arquivo BCD do risos pelo arquivo generico, criar uma imagem e fazer o up para outras maquinas e averiguar se persiste generico a todos os casos.
+
+Mais Issue:
+
+(Ja realizada) - Instalar Windows 7/8/10 em uma partição somente
