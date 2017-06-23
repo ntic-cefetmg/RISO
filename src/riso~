@@ -13,8 +13,6 @@ riso_conf=$dir_riso/riso.conf
 riso_part=$dir_riso/riso.part
 arq_log=$dir_riso/riso.log
 
-
-
 #Função de Log
 log(){
     [ -e $arq_log ] || touch $arq_log
@@ -35,7 +33,6 @@ carrega_variaveis() {
 	    log "ERRO: Servidor não encontrado na rede."
         exit 1
     fi
-
     partwindows=`(cut -d ';' -f10 | cut -d '"' -f2 | cut -d '=' -f2) <<< ${avahi_saida}` #Partição com Windows.
     partlinux=`(cut -d ';' -f10 | cut -d '"' -f4 | cut -d '=' -f2) <<< ${avahi_saida}` #Partição com Linux.
     partrec=`(cut -d ';' -f10 | cut -d '"' -f6 | cut -d '=' -f2) <<< ${avahi_saida}` #Partição de Recuperação.
@@ -65,12 +62,7 @@ instala() {
     
         #Carrega variáveis
         [ -z $partwindows -o -z $sa_partwindows ] && [ -z $partlinux -o -z $sa_partlinux ] && . $riso_part
-		
-	    #Guarda o BCD atual da máquina
-            mount -t ntfs-3g -o remove_hiberfile /dev/sda1 /mnt/
-            cp /mnt/Boot/BCD  $dir_riso
-             
-
+    
 	    #Desmonta partiçoes.
 	    umount $partwindows 2> /dev/null
 	    umount $partlinux 2> /dev/null
@@ -93,12 +85,6 @@ instala() {
 	    sleep 3
 	    log "Instalação do Windows e do Linux finalizada."
 	    update-grub
-
-            #Reescreve BCD antigo na m�quina
-            mount -t ntfs-3g -o remove_hiberfile /dev/sda1 /mnt/
-            mv $dir_riso/BCD /mnt/Boot/
-            umount /dev/sda1
-            
 	    
 	    #verifica se desliga computador
 	    desligar=`grep "DESLIGAR" ${riso_conf} | cut -d'=' -f2`
@@ -111,7 +97,7 @@ instala() {
 	    reiniciar=`grep "REINICIAR" ${riso_conf} | cut -d'=' -f2`
 	    if [ "$reiniciar" = "SIM" ]; then
 		log "Reiniciando computador."
-
+	        reboot
 	    fi
 	else
 		dialog \
@@ -132,12 +118,7 @@ instala_windows() {
     
         #le do arquivo de variaveis
         [ -z $partwindows -o -z $sa_partwindows ] && . $riso_part  
-	    
-		
-	    #Guarda o BCD atual da máquina
-            mount -t ntfs-3g -o remove_hiberfile /dev/sda1 /mnt/
-            cp /mnt/Boot/BCD  $dir_riso
-	            
+        
 	    #Desmonta partiçoes
 	    umount $partwindows 2> /dev/null
 
@@ -147,11 +128,6 @@ instala_windows() {
 	
 	    log "Instalação do Windows finalizada."
 	    update-grub
-	    
-	    #Reescreve BCD antigo na m�quina
-            mount -t ntfs-3g -o remove_hiberfile /dev/sda1 /mnt/
-            mv $dir_riso/BCD /mnt/Boot/
-            umount /dev/sda1      
 	
 	    #verifica se desliga computador
 	    desligar=`grep "DESLIGAR" ${riso_conf} | cut -d'=' -f2`
@@ -228,6 +204,100 @@ instala_linux() {
   
 }
 
+#Baixa imagens do Linux e do Windows.
+baixa_imagens() {
+	log "Iniciando download do Linux e do Windows."
+	log "Conectando ao servidor."
+	echo "Conectando ao servidor..."
+	carrega_variaveis || return 1
+
+    #Vefifica se imagem do windows já é a mais recente
+	sizelocwin="0"
+	[ -e ${img_win} ] && sizelocwin=$(du ${img_win} | cut -f1 )
+	if [ "$sizelocwin" = "$tamwindows" ]; then
+        dialog \
+        --title 'Atenção' \
+        --ok-label 'OK' \
+        --msgbox '\nA imagem do Windows no computador já é a mais recente.' \
+        7 50
+	log "ERRO: Imagem do Windows já é a mais recente."
+        return 4
+    fi
+
+    #Vefifica se imagem do linux já é a mais recente
+	sizeloclin="0"
+	[ -e ${img_lin} ] && sizeloclin=$(du ${img_lin} | cut -f1)
+	if [ "$sizeloclin" = "$tamlinux" ]; then
+        dialog \
+        --title 'Atenção' \
+        --ok-label 'OK' \
+        --msgbox '\n A imagem do Linux no computador já é a mais recente.' \
+        7 50
+	log "ERRO: Imagem do Linux já é a mais recente."
+        return 4
+    fi
+
+	#Deleta imagens antigas.
+	log "Iniciando remoção da imagem antiga do Windows."
+	echo "Removendo imagem antiga do Windows..."
+	rm -f $img_win
+	rm -f $tor_win
+	log "Fim da remoção da imagem antiga do Windows."
+	log "Inicio da remoção da imagem antiga do Linux."
+	echo "Removendo imagem antiga do Linux..."
+	rm -f $img_lin
+	rm -f $tor_lin
+	log "Fim da remoção da imagem antiga do Linux."
+	
+	#Inicia download das imagens em terminal virtual.
+	log "Iniciando download dos torrent do Windows."
+	(scp -o StrictHostKeyChecking=no root@${servidor}:${tor_win} ${tor_win} && log "Torrent do Windows baixado com sucesso.") || log "ERRO: Torrent do Windows não foi baixado."
+	log "Iniciando download do torrent do Linux."
+	(scp -o StrictHostKeyChecking=no root@${servidor}:${tor_lin} ${tor_lin} && log "Torrent do Linux baixado com sucesso.") || log "ERRO: Torrent do Linux não foi baixado."
+	cd ${dir_img}
+	log "Iniciando download das imagens do Windows e do Linux."
+	screen -d -m rtorrent ${tor_win} ${tor_lin}
+
+    	#Se usuário cancelar volta para menu.
+	trap "killall rtorrent; clear; exit" 2 15
+
+	# Loop que aguarda o torrent ser concluido.
+	# Compara o tamanho do arquivo que esta sendo baixado pelo rtorrent
+	# com o tamanho total no arquivo riso.service.
+	(
+	    sizelocwin="0"
+	    sizeloclin="0"
+	    total=$((tamwindows+tamlinux))
+	    while [ "$sizelocwin" -lt "$tamwindows" -o "$sizeloclin" -lt "$tamlinux" ]; do
+	
+		    # quanto já foi copiado?
+		    [ -e ${img_win} ] && sizelocwin=$(du ${img_win} | cut -f1)
+		    [ -e ${img_lin} ] && sizeloclin=$(du ${img_lin} | cut -f1)
+	            copiado=$((sizelocwin+sizeloclin))
+
+		    # qual a porcentagem do total?
+		    PORCENTAGEM=$((copiado*100/total))
+		
+		    # envia a porcentagem para o dialog
+		    echo $PORCENTAGEM
+		
+		    # aguarda até a próxima checagem
+		    sleep 3
+	    done	
+
+	    # cópia finalizada, mostra a porcentagem final
+	    echo 100
+	    log "Download das imagens do Windows e Linux finalizado."
+	    sleep 30
+	
+    ) | dialog --title "Baixando imagens..." --gauge "Baixando imagens do Windows e Linux do servidor RISOS para maquina local" 8 50 0
+
+	log "Finalizando rtorrent."
+	#Finaliza download
+	killall rtorrent
+	
+}
+
 #Baixa imagem do Windows.
 baixa_imagem_windows() {
 	log "Iniciando download do Windows."
@@ -248,25 +318,52 @@ baixa_imagem_windows() {
     fi
 
 	#Deleta imagens antigas.
-	echo "Iniciando remoção da imagem antiga do Windows."
+	log "Iniciando remoção da imagem antiga do Windows."
 	echo "Removendo imagem antiga do Windows..."
 	rm -f ${img_win}
 	rm -f ${tor_win}
-	echo "Remoção da imagem antiga do Windows finalizada."
+	log "Remoção da imagem antiga do Windows finalizada."
 
 	#Inicia download da imagen em terminal virtual.
-	echo "Inicia o download do torrent do Windows."
+	log "Inicia o download do torrent do Windows."
 	(scp -o StrictHostKeyChecking=no root@${servidor}:${tor_win} ${tor_win} && log "Download do torrent do Windows finalizado.") || log "ERRO: O torrent do Windows não foi baixado."
 	cd $dir_img
-	echo "Iniciando Download do Windows."
-	rtorrent $tor_win
+	log "Iniciando Download do Windows."
+	screen -d -m rtorrent $tor_win
 	
 	#Se usuario cancelar volta para menu.
 	trap "killall rtorrent; clear; exit" 2 15
 
- 	echo "Download do Windows finalizado."
-	sleep 3
-	reset
+	# Loop que aguarda o torrent ser concluido.
+	# Compara o tamanho do arquivo que esta sendo baixado pelo rtorrent
+	# com o tamanho total do arquivo em riso.service.
+    (
+	    sizelocwin="0"
+	    while [ "$sizelocwin" -lt "$tamwindows" ]; do
+	
+		    # quanto já foi copiado?
+		    [ -e ${img_win} ] && sizelocwin=$(du $img_win | cut -f1)
+
+		    # qual a porcentagem do total?
+		    PORCENTAGEM=$((sizelocwin*100/tamwindows))
+		
+		    # envia a porcentagem para o dialog
+		    echo $PORCENTAGEM
+		
+		    # aguarda até a próxima checagem
+		    sleep 3
+	    done	
+
+	    # cópia finalizada, mostra a porcentagem final
+	    echo 100
+	    log "Download do Windows finalizado."
+	    sleep 30
+	
+    ) | dialog --title "Baixando imagem..." --gauge "Baixando imagem do Windows do servidor RISOS para maquina local" 8 50 0
+
+	log "Finalizando rtorrent."
+	#Finaliza download
+	killall rtorrent
 	
 }
 
@@ -291,27 +388,51 @@ baixa_imagem_linux() {
     fi
 
 	#Deleta imagens antigas.
-	echo "Deletando imagem antiga do Linux."
+	log "Deletando imagem antiga do Linux."
 	echo "Removendo imagem antiga do Linux..."
 	rm -f ${img_lin}
 	rm -f ${tor_lin}
-	echo "Imagem antiga do Linux deletada."
+	log "Imagem antiga do Linux deletada."
 
     #Inicia download da imagen em terminal virtual.
-	echo "Baixando torrent do Linux."
+	log "Baixando torrent do Linux."
 	(scp -o StrictHostKeyChecking=no root@${servidor}:${tor_lin} ${tor_lin} && log "Torrent do Linux baixado com sucesso.") || log "ERRO: Erro ao baixar torrent do Linux."
 	cd ${dir_img}
-	echo "Iniciando download do Linux."
-	pwd
-	rtorrent ${tor_lin}
+	log "Iniciando download do Linux."
+	screen -d -m rtorrent ${tor_lin}
 	
 	#Se usuário cancelar volta para menu.
 	trap "killall rtorrent; clear; exit" 2 15
 
-  	# cópia finalizada, mostra a porcentagem final
-	echo "Download do Linux finalizado."
-	sleep 3
-	reset
+    # Loop que aguarda o torrent ser concluido.
+	# Compara o tamanho do arquivo que esta sendo baixado pelo rtorrent
+	# com o tamanho total do arquivo em riso.service.
+    (
+	    sizeloclin="0"
+	    while [ "$sizeloclin" -lt "$tamlinux" ]; do
+	
+		    # quanto já foi copiado?
+		    [ -e ${img_lin} ] && sizeloclin=$(du ${img_lin} | cut -f1)
+
+		    # qual a porcentagem do total?
+		    PORCENTAGEM=$((sizeloclin*100/tamlinux))
+		
+		    # envia a porcentagem para o dialog
+		    echo $PORCENTAGEM
+		
+		    # aguarda até a próxima checagem
+		    sleep 3
+	    done	
+
+	    # cópia finalizada, mostra a porcentagem final
+	    echo 100
+	    log "Download do Linux finalizado."
+	    sleep 30
+    ) | dialog --title "Baixando imagem..." --gauge "Baixando imagem do Linux do servidor RISOS para maquina local" 8 50 0
+
+	log "Finalizando rtorrent"
+	#Finaliza download
+	killall rtorrent
 }
 
 #Instala imagem do SO com o R.I.S.O..
@@ -394,17 +515,17 @@ configuracoes() {
 atualiza() {
 	log "Iniciando atualização do script."
 	log "Verificando disponibilidade do servidor de atualização."
-	ping -q -c 1 172.16.127.168 > /dev/null 2>&1
+	ping -q -c 1 200.131.37.236 > /dev/null 2>&1
 	if [ "$?" -eq "0" ]; then
 		log "Iniciando download do script novo."
-		(scp root@172.16.127.168/riso -O /usr/riso/riso && log "RISO atualizado com sucesso.") || log "ERRO: Não foi possível baixar o novo script."
+		(wget 200.131.37.236/riso/riso0.5 -O /usr/riso/riso && log "RISO atualizado com sucesso.") || log "ERRO: Não foi possível baixar o novo script."
 		
 		#Menssagem de atualizado com sucesso.
 		dialog \
 	        --ok-label 'OK' \
         	--title 'Atenção' \
-        	--msgbox '\n   RISO atualizado com sucesso.\n' \
-		    7 39
+        	--msgbox '\n    RISO atualizado com sucesso.\n' \
+		    7 40
 		
 		bash /usr/riso/riso
 		exit
@@ -486,7 +607,7 @@ menu_baixa_imagens() {
 	case $opcao in
 		'"Windows"') baixa_imagem_windows && instala_windows;;
 		'"Linux"') baixa_imagem_linux && instala_linux;;
-		'"Windows" "Linux"') baixa_imagem_linux && baixa_imagem_windows && instala;;
+		'"Windows" "Linux"') baixa_imagens && instala;;
 	esac
 	
 }
@@ -499,7 +620,7 @@ menu() {
 		dialog --stdout                                         \
 		--ok-label 'Confirmar'                                  \
 		--cancel-label 'Sair'                                   \
-		--title 'RISO - .#DESCUBRA2.1'   				\
+		--title 'RISO - 0.5'                                    \
 		--menu 'Escolha o que voce quer fazer:'                 \
 			0 0 0                                               \
 			1 'Instalar imagens ja existentes'                  \
@@ -615,7 +736,7 @@ avaliar_args() {
 				until [ $i -eq ${argumento[0]} -o ${argumento[$i]} = "--baixa" ]; do
 					((i++))
 					case ${argumento[$i]} in
-						"windows") instala;;
+						"windows") instala_windows;;
 						"linux") instala_linux;;
 						"rec") instala_rec;;
 					esac

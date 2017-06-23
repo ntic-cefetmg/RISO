@@ -5,17 +5,7 @@
 # --------------------------------------------------------------------------
 
 dep_cli="avahi-utils rtorrent screen ntfsprogs ssh"
-dep_ser="avahi-utils avahi-daemon bittorrent rtorrent screen ntfsprogs grub2 ssh coreutils mkisofs genisoimage findutils bash passwd sed squashfs-tools casper rsync mount eject libdebian-installer4 os-prober ubiquity user-setup discover1 discover laptop-detect syslinux xterm util-linux xresprobe cdrecord"
-
-# modificaçao -- dessabila o UUID no ubuntu
-DisableUUID(){ 
-b=`cat /boot/grub/grub.cfg | grep =UUID=`
-uuidUbuntu=`(cut -d ' ' -f3 | cut -d '=' -f2-3)<<<${b}`
-partLinux=`os-prober | grep linux | cut -d ':' -f1` 
-
-sed "s|${uuidUbuntu}|${partLinux}|g" -i /boot/grub/grub.cfg
-
-}
+dep_ser="avahi-utils avahi-daemon bittorrent rtorrent screen ntfsprogs grub2 ssh coreutils mkisofs genisoimage findutils bash passwd sed squashfs-tools casper rsync mount eject libdebian-installer4 os-prober ubiquity user-setup discover laptop-detect syslinux xterm util-linux xresprobe cdrecord"
 
 menu() {
     apt-get install -y dialog
@@ -53,19 +43,19 @@ instala_riso() {
     echo "Movendo script..."
     cp ./src/riso /usr/riso/riso
     cp ./src/quitRTorrent.sh /usr/riso/quitRTorrent.sh
-    chmod +x /usr/riso/quitRTorrent.sh
     chmod +x /usr/riso/riso
+    chmod +x /usr/riso/quitRTorrent.sh
+    echo "Copiando Arquivos de Configuracao"
     cp ./conf/riso.conf /usr/riso/riso.conf
-    cp ./conf/.rtorrent.rc /root    
-
+    cp ./conf/.rtorrent.rc /root
+    
     echo "Sistema instalado com sucesso."
     echo "Tente digitar 'riso' para iniciar."
 }
 
 instala_risos() {
     echo "Instalando Servidor (RISOS)..."
-    servidor=`ip route | grep src | cut -d ' ' -f12`  
-        
+    
     echo "Liberando login como root..."
     echo -n "root:" > /etc/shadow.tmp
     pass=`cat /etc/shadow | grep \`who | awk 'NR==1{print $1}'\` | cut -d':' -f2`
@@ -76,6 +66,7 @@ instala_risos() {
     
     echo "Baixando dependências..."
     apt-get install -y $dep_ser
+    read
     
     echo "Criando árvore de diretórios..."
     mkdir -p /usr/riso
@@ -98,7 +89,8 @@ instala_risos() {
     
     #Pega partições
     partrec=`df -T | awk 'NR==2{print $1}'`
-    partwindows=`os-prober | grep Windows | cut -d':' -f1`
+    #partwindows=`os-prober | grep Windows | cut -d':' -f1`
+    partwindows='/dev/sda1'
     partlinux=`os-prober | grep linux | cut -d':' -f1`
     partswap=`blkid | grep swap | grep -v ram | cut -d':' -f1`
     
@@ -115,10 +107,8 @@ instala_risos() {
     sed s/'#GRUB_DISABLE_LINUX_RECOVERY="true"'/'GRUB_DISABLE_LINUX_RECOVERY="true"'/g -i /etc/default/grub
     rm -f /etc/grub.d/20_memtest86+
     mv /etc/grub.d/10_linux /etc/grub.d/50_linux
-    update-grub
-  
-    DisableUUID #modificacao
-  
+    update-grub2
+    
     #Cria riso.service
     echo "Criando arquivo de configuração..."
     echo '<?xml version="1.0" standalone="no"?><!--*-nxml-*-->' > /etc/avahi/services/riso.service
@@ -133,18 +123,15 @@ instala_risos() {
     echo '-->' >> /etc/avahi/services/riso.service
     echo '' >> /etc/avahi/services/riso.service
     echo '<service-group>' >> /etc/avahi/services/riso.service
-    echo '  <name>Servidor RISO DECOM</name>' >> /etc/avahi/services/riso.service
+    echo '  <name>Servidor RISO</name>' >> /etc/avahi/services/riso.service
     echo '' >> /etc/avahi/services/riso.service
     echo '  <service>' >> /etc/avahi/services/riso.service
     echo '    <!--Nome do serviço-->' >> /etc/avahi/services/riso.service
-    echo "    <type>_DECOM_RISO._tcp</type>" >> /etc/avahi/services/riso.service
+    echo "    <type>_RISO._tcp</type>" >> /etc/avahi/services/riso.service
     echo '' >> /etc/avahi/services/riso.service
     echo '    <!--Campo não é usado-->' >> /etc/avahi/services/riso.service
     echo '    <port>1234</port>' >> /etc/avahi/services/riso.service
     echo '' >> /etc/avahi/services/riso.service
-    echo '    <!--Ip do servidor-->' >> /etc/avahi/services/riso.service # modifiçaco para guarda o ip do servidor
-    echo "    <txt-record>Servidor=$servidor</txt-record>" >> /etc/avahi/services/riso.service #
-    echo '' >> /etc/avahi/services/riso.service #
     echo '    <!--Variáveis com sistema de arquivo das partições-->' >> /etc/avahi/services/riso.service
     echo "    <txt-record>sa_partrec=${sa_partrec}</txt-record>" >> /etc/avahi/services/riso.service
     echo "    <txt-record>sa_partlinux=${sa_partlinux}</txt-record>" >> /etc/avahi/services/riso.service
@@ -162,6 +149,8 @@ instala_risos() {
     echo '' >> /etc/avahi/services/riso.service
     echo '  </service>' >> /etc/avahi/services/riso.service
     echo '</service-group>' >> /etc/avahi/services/riso.service
+
+    read
     
        
     # preinst script for remastersys
